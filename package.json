@@ -2,5 +2,12 @@
   "name": "@scale.digital/root",
   "private": true,
   "type": "module",
-  "workspaces" : []
+  "workspaces": [],
+  "scripts": {
+    "check": "biome check .",
+    "fix": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.10"
+  }
 }

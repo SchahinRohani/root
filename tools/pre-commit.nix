@@ -15,4 +15,18 @@ _: {
     enable = true;
     args = ["--maxkb=1000"];
   };
+
+  # Web
+  biome = {
+    enable = true;
+    types_or = [
+      "javascript"
+      "jsx"
+      "ts"
+      "tsx"
+      "json"
+      "vue"
+      "astro"
+    ];
+  };
 }
