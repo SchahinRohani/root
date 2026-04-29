@@ -1,0 +1,6 @@
+{
+  "name": "@scale.digital/root",
+  "private": true,
+  "type": "module",
+  "workspaces" : []
+}

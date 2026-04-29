@@ -46,6 +46,9 @@
           ripgrep
           gh
           pre-commit
+
+          # Web tooling
+          bun
         ];
         shellHook = ''
           # Generate the .pre-commit-config.yaml symlink when entering the dev shell
