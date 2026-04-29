@@ -16,3 +16,12 @@ result-*
 
 # Pre-Commit Hooks
 .pre-commit-config.yaml
+
+# Web dependencies
+node_modules
+
+# output
+out
+dist
+*.tgz
+bin
