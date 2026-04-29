@@ -13,3 +13,6 @@ result-*
 # Editor
 *.swp
 *~
+
+# Pre-Commit Hooks
+.pre-commit-config.yaml
