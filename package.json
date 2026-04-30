@@ -2,7 +2,9 @@
   "name": "@scale.digital/root",
   "private": true,
   "type": "module",
-  "workspaces": [],
+  "workspaces": [
+    "packages/astro-bun"
+  ],
   "scripts": {
     "check": "biome check .",
     "fix": "biome check --write ."

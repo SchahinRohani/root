@@ -7,7 +7,15 @@ _: {
   # Generic file checks
   check-yaml.enable = true;
   check-toml.enable = true;
-  check-json.enable = true;
+
+  check-json = {
+    enable = true;
+    excludes = [
+      "tsconfig\\.json$"
+      "tsconfig\\..*\\.json$"
+    ];
+  };
+
   check-merge-conflicts.enable = true;
   end-of-file-fixer.enable = true;
   trim-trailing-whitespace.enable = true;
