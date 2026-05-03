@@ -27,6 +27,7 @@ _: {
   # Web
   biome = {
     enable = true;
+    excludes = ["^\\.changeset/.*"];
     types_or = [
       "javascript"
       "jsx"
