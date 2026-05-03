@@ -1,0 +1,8 @@
+{
+  "mode": "pre",
+  "tag": "rc",
+  "initialVersions": {
+    "@scale.digital/astro-bun": "0.0.0"
+  },
+  "changesets": []
+}
