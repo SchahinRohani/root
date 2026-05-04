@@ -1,0 +1,27 @@
+name: Resolve PR
+description: Resolves the pull request number for a workflow_run event, including fork PRs.
+
+outputs:
+  number:
+    description: The pull request number.
+    value: ${{ steps.resolve.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve PR number
+      id: resolve
+      uses: >- # https://github.com/actions/github-script/releases/tag/v9.0.0
+        actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        result-encoding: string
+        script: |
+          const prs = context.payload.workflow_run.pull_requests;
+          if (prs.length > 0) return prs[0].number;
+          const { data } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            commit_sha: context.payload.workflow_run.head_sha,
+          });
+          if (data.length === 0) throw new Error(`No PR found for SHA ${context.payload.workflow_run.head_sha}`);
+          return data[0].number;

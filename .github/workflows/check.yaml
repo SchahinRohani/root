@@ -1,20 +1,22 @@
-name: Pull Request
+name: "Pull Request / Stage 1"
 
 on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
-  pull-requests: read
+permissions: {}
 
 jobs:
   check:
     name: Check
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: >- # https://github.com/actions/checkout/releases/tag/v6.0.2
           actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Install Nix
         uses: >- # https://github.com/DeterminateSystems/nix-installer-action/releases/tag/v22
@@ -22,14 +24,3 @@ jobs:
 
       - name: Run flake check
         run: nix flake check --print-build-logs
-
-  test-astro-bun:
-    name: Test astro-bun
-    needs: check
-    if: |
-      contains(github.event.pull_request.labels.*.name, 'area: astro-bun')
-    permissions:
-      contents: read
-    uses: ./.github/workflows/test.yaml
-    with:
-      package: astro-bun
