@@ -1,22 +1,27 @@
 ---
-name: Bug report
-about: Something is broken or behaves unexpectedly
-labels: bug
+name: Feature request
+about: Suggest an idea or enhancement
+title: ''
+labels: ''
+assignees: ''
 ---
 
-## What happened
+## Summary
 
-<!-- Concise description of the problem. -->
+<!-- One or two sentences describing the feature you'd like to see. -->
 
-## Expected behavior
+## Motivation
 
-<!-- What did you expect instead? -->
+<!-- What problem does this solve? What's the use case? -->
 
-## Reproduction
+## Proposed Solution
 
-<!-- Minimal steps to reproduce. -->
+<!-- How do you imagine this working? -->
 
-## Environment
+## Alternatives Considered
 
-- OS:
-- Package / version:
+<!-- Other approaches you've thought about, if any. -->
+
+## Additional Context
+
+<!-- Anything else relevant: examples, references, mockups, related issues. -->
