@@ -48,6 +48,8 @@ jobs:
   Test:
     needs: resolve
     if: needs.resolve.outputs.astro-bun == 'true'
+    permissions:
+      contents: read
     uses: ./.github/workflows/test-package.yaml
     with:
       package: astro-bun
