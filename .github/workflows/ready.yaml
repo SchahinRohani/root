@@ -1,0 +1,60 @@
+name: "Pull Request / Stage 4"
+
+on:
+  workflow_run:
+    workflows: ["Pull Request / Stage 3"]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  ready:
+    name: Ready
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - uses: >- # https://github.com/actions/checkout/releases/tag/v6.0.2
+          actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Resolve PR
+        id: pr
+        uses: ./.github/actions/resolve
+
+      - name: Generate App Token
+        id: app-token
+        uses: >- # https://github.com/actions/create-github-app-token/releases/tag/v3.1.1
+          actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Add ready-for-review label
+        uses: >- # https://github.com/actions/github-script/releases/tag/v9.0.0
+          actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          PR: ${{ steps.pr.outputs.number }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.PR, 10),
+              labels: ['status: ready-for-review'],
+            });
+
+      - name: Set commit status
+        uses: >- # https://github.com/actions/github-script/releases/tag/v9.0.0
+          actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.workflow_run.head_sha,
+              state: 'success',
+              context: 'Pull Request / Ready',
+              description: 'All checks passed',
+            });
