@@ -24,6 +24,7 @@
           - '**/*.mdx'
       - all-globs-to-all-files:
           - '!.github/**'
+          - '!examples/**'
 
 "area: chore":
   - changed-files:

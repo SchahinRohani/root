@@ -1,0 +1,32 @@
+name: Pull Request
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  area:
+    name: Labels
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Generate App Token
+        id: app-token
+        uses: >- # https://github.com/actions/create-github-app-token/releases/tag/v3.1.1
+          actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Apply labels
+        uses: >- # https://github.com/actions/labeler/releases/tag/v6.0.1
+          actions/labeler@634933edcd8ababfe52f92936142cc22ac488b1b
+        with:
+          repo-token: ${{ steps.app-token.outputs.token }}
+          configuration-path: .github/labeler.yaml
+          sync-labels: true
