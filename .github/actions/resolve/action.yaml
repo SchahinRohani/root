@@ -16,12 +16,15 @@ runs:
       with:
         result-encoding: string
         script: |
+          const sha = context.payload.workflow_run.head_sha;
+
           const prs = context.payload.workflow_run.pull_requests;
           if (prs.length > 0) return prs[0].number;
-          const { data } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            commit_sha: context.payload.workflow_run.head_sha,
+
+          const { data } = await github.rest.search.issuesAndPullRequests({
+            q: `repo:${context.repo.owner}/${context.repo.repo} is:pr sha:${sha}`,
           });
-          if (data.length === 0) throw new Error(`No PR found for SHA ${context.payload.workflow_run.head_sha}`);
-          return data[0].number;
+          if (data.total_count === 0) {
+            throw new Error(`No PR found for SHA ${sha}`);
+          }
+          return data.items[0].number;
