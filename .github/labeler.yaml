@@ -14,13 +14,16 @@
 "area: ci":
   - changed-files:
       - any-glob-to-any-file:
-          - '.github/**'
+          - '.github/workflows/**'
+          - '.github/labeler.yaml'
 
 "area: docs":
   - changed-files:
       - any-glob-to-any-file:
           - '**/*.md'
           - '**/*.mdx'
+      - all-globs-to-all-files:
+          - '!.github/**'
 
 "area: chore":
   - changed-files:
@@ -30,3 +33,11 @@
           - '!.github/**'
           - '!**/*.md'
           - '!**/*.mdx'
+
+"area: github":
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+      - all-globs-to-all-files:
+          - '!.github/workflows/**'
+          - '!.github/labeler.yaml'
