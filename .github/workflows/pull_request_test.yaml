@@ -6,15 +6,27 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
+  issues: write
   id-token: write
 
 jobs:
-  flake-check:
+  check:
     name: Check
     runs-on: ubuntu-24.04
+    outputs:
+      labels: ${{ steps.labeler.outputs.all-labels }}
     steps:
       - uses: >- # https://github.com/actions/checkout/releases/tag/v6.0.2
           actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Apply area labels
+        id: labeler
+        uses: >- # https://github.com/actions/labeler/releases/tag/v6.0.1
+          actions/labeler@634933edcd8ababfe52f92936142cc22ac488b1b
+        with:
+          configuration-path: .github/labeler.yaml
+          sync-labels: true
 
       - name: Install Nix
         uses: >- # https://github.com/DeterminateSystems/nix-installer-action/releases/tag/v22
@@ -22,3 +34,29 @@ jobs:
 
       - name: Run flake check
         run: nix flake check --print-build-logs
+
+  test-astro-bun:
+    name: Test
+    needs: check
+    if: |
+      ${{ contains(needs.check.outputs.labels, 'area: astro-bun') }}
+    uses: ./.github/workflows/test.yaml
+    with:
+      package: astro-bun
+
+  label:
+    name: Label
+    needs: [check, test-astro-bun]
+    if: |
+      always() &&
+      needs.check.result == 'success' &&
+      (needs.test-astro-bun.result == 'success' || needs.test-astro-bun.result == 'skipped')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Add ready-for-review label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr edit "$PR" --repo "$REPO" --add-label "status: ready-for-review"

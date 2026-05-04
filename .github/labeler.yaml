@@ -1,0 +1,32 @@
+# Configuration for actions/labeler
+# Docs: https://github.com/actions/labeler
+
+"area: astro-bun":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'packages/astro-bun/**'
+
+"area: examples":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'examples/**'
+
+"area: ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+
+"area: docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
+          - '**/*.mdx'
+
+"area: chore":
+  - changed-files:
+      - all-globs-to-all-files:
+          - '!packages/**'
+          - '!examples/**'
+          - '!.github/**'
+          - '!**/*.md'
+          - '!**/*.mdx'
