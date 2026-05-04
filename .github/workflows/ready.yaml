@@ -30,6 +30,9 @@ jobs:
         with:
           client-id: ${{ secrets.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-issues: write
+          permission-pull-requests: write
+          permission-statuses: write
 
       - name: Add ready-for-review label
         uses: >- # https://github.com/actions/github-script/releases/tag/v9.0.0
