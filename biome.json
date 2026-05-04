@@ -7,7 +7,11 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**/*.{ts,tsx,js,jsx,json,html,css,astro}", "!.changeset"]
+    "includes": [
+      "**/*.{ts,tsx,js,jsx,json,html,css,astro}",
+      "!.changeset",
+      "!examples"
+    ]
   },
   "formatter": {
     "enabled": true,
