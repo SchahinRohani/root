@@ -25,9 +25,10 @@
 "topic: docs":
   - changed-files:
       - any-glob-to-any-file:
-          - '**/*.md'
-          - '**/*.mdx'
-          - '!examples/**'
+          - '*.md'
+          - '*.mdx'
+          - 'packages/**/*.md'
+          - 'packages/**/*.mdx'
 
 "topic: governance":
   - changed-files:
