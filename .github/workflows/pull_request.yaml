@@ -33,8 +33,8 @@ jobs:
     outputs:
       packages: ${{ steps.filter.outputs.changes }}
     steps:
-      - uses: >- # https://github.com/dorny/paths-filter/releases/tag/v4.0.0
-          dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36
+      - uses: >- # https://github.com/dorny/paths-filter/releases/tag/v4.0.1
+          dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d
         id: filter
         with:
           filters: |
