@@ -1,28 +1,19 @@
-name: "Pull Request / Stage 2"
+name: Labels
 
 on:
-  workflow_run:
-    workflows: ["Pull Request / Stage 1"]
-    types: [completed]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
 
 permissions: {}
 
 jobs:
-  label:
-    name: Label
-    if: github.event.workflow_run.conclusion == 'success'
+  sync:
+    name: Sync
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: read
     steps:
-      - uses: >- # https://github.com/actions/checkout/releases/tag/v6.0.2
-          actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Resolve PR
-        id: pr
-        uses: ./.github/actions/resolve
-
       - name: Generate App Token
         id: app-token
         uses: >- # https://github.com/actions/create-github-app-token/releases/tag/v3.1.1
@@ -38,4 +29,3 @@ jobs:
           repo-token: ${{ steps.app-token.outputs.token }}
           configuration-path: .github/labeler.yaml
           sync-labels: true
-          pr-number: ${{ steps.pr.outputs.number }}
