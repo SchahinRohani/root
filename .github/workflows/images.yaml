@@ -1,0 +1,296 @@
+name: Images
+
+run-name: Release ${{ inputs.package }} image ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Image to release
+        required: true
+        type: choice
+        options:
+          - document
+      version:
+        description: Image version
+        required: true
+        default: 0.1.0-test.2
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: image-${{ inputs.package }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            architecture: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            architecture: arm64
+
+    runs-on: ${{ matrix.runner }}
+
+    env:
+      PACKAGE: ${{ inputs.package }}
+      VERSION: ${{ inputs.version }}
+      ARCHITECTURE: ${{ matrix.architecture }}
+      ARCHIVE: image-${{ matrix.architecture }}.tar
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+
+      - name: Build image
+        run: nix build ".#image.${PACKAGE}" --print-build-logs
+
+      - name: Export OCI archive
+        run: |
+          nix run ".#image.${PACKAGE}.copyTo" -- \
+            "oci-archive:${ARCHIVE}:${PACKAGE}:${VERSION}"
+
+      - name: Upload OCI archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-${{ matrix.architecture }}
+          path: image-${{ matrix.architecture }}.tar
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    name: Publish multi-architecture image
+    needs: build
+    runs-on: ubuntu-24.04
+
+    env:
+      PACKAGE: ${{ inputs.package }}
+      VERSION: ${{ inputs.version }}
+      REGISTRY: ghcr.io
+      DOCKERHUB_REGISTRY: docker.io
+      DOCKERHUB_NAMESPACE: scaledigital
+
+    steps:
+      - name: Download OCI archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: image-*
+          path: images
+          merge-multiple: true
+
+      - name: Check container tools
+        run: |
+          skopeo --version
+          buildah --version
+          buildah info
+
+      - name: Validate inputs and images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$VERSION" =~ ^[0-9A-Za-z_][0-9A-Za-z._-]{0,127}$ ]]; then
+            echo "Invalid OCI tag: $VERSION" >&2
+            exit 1
+          fi
+
+          for architecture in amd64 arm64; do
+            archive="${PWD}/images/image-${architecture}.tar"
+
+            test -f "$archive"
+
+            skopeo inspect --config "oci-archive:${archive}" |
+              jq -e \
+                --arg architecture "$architecture" \
+                '.os == "linux" and .architecture == $architecture'
+          done
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          registry: docker.io
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.0
+
+      - name: Create and publish manifest
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          owner="$(
+            printf '%s' "$GITHUB_REPOSITORY_OWNER" |
+              tr '[:upper:]' '[:lower:]'
+          )"
+
+          ghcr_image="${REGISTRY}/${owner}/${PACKAGE}"
+          dockerhub_image="${DOCKERHUB_REGISTRY}/${DOCKERHUB_NAMESPACE}/${PACKAGE}"
+          manifest="localhost/${PACKAGE}-${GITHUB_RUN_ID}"
+
+          for image in "$ghcr_image" "$dockerhub_image"; do
+            if skopeo inspect \
+              "docker://${image}:${VERSION}" \
+              >/dev/null 2>&1; then
+              echo "Image already exists: ${image}:${VERSION}" >&2
+              exit 1
+            fi
+          done
+
+          buildah manifest create "$manifest"
+
+          for architecture in amd64 arm64; do
+            buildah manifest add \
+              --os linux \
+              --arch "$architecture" \
+              "$manifest" \
+              "oci-archive:${PWD}/images/image-${architecture}.tar"
+          done
+
+          buildah manifest inspect "$manifest"
+
+          buildah manifest push \
+            --all \
+            --digestfile ghcr-digest.txt \
+            "$manifest" \
+            "docker://${ghcr_image}:${VERSION}"
+
+          buildah manifest push \
+            --all \
+            --rm \
+            --digestfile dockerhub-digest.txt \
+            "$manifest" \
+            "docker://${dockerhub_image}:${VERSION}"
+
+          ghcr_digest="$(<ghcr-digest.txt)"
+          dockerhub_digest="$(<dockerhub-digest.txt)"
+
+          echo "GHCR digest: ${ghcr_digest}"
+          echo "Docker Hub digest: ${dockerhub_digest}"
+
+          {
+            echo "ghcr_image=${ghcr_image}"
+            echo "ghcr_digest=${ghcr_digest}"
+            echo "dockerhub_image=${dockerhub_image}"
+            echo "dockerhub_digest=${dockerhub_digest}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify published manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          images=(
+            "${{ steps.publish.outputs.ghcr_image }}:${VERSION}"
+            "${{ steps.publish.outputs.dockerhub_image }}:${VERSION}"
+          )
+
+          for image in "${images[@]}"; do
+            echo "Verifying manifest: ${image}"
+
+            skopeo inspect --raw "docker://${image}" |
+              jq -e '
+                [.manifests[].platform |
+                  "\(.os)/\(.architecture)"
+                ] | sort ==
+                ["linux/amd64", "linux/arm64"]
+              '
+          done
+
+      - name: Attest GHCR image
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.publish.outputs.ghcr_image }}
+          subject-digest: ${{ steps.publish.outputs.ghcr_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest Docker Hub image
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.publish.outputs.dockerhub_image }}
+          subject-digest: ${{ steps.publish.outputs.dockerhub_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Sign published images
+        env:
+          GHCR_IMAGE: ${{ steps.publish.outputs.ghcr_image }}
+          GHCR_DIGEST: ${{ steps.publish.outputs.ghcr_digest }}
+          DOCKERHUB_IMAGE: ${{ steps.publish.outputs.dockerhub_image }}
+          DOCKERHUB_DIGEST: ${{ steps.publish.outputs.dockerhub_digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cosign sign --yes \
+            "${GHCR_IMAGE}@${GHCR_DIGEST}"
+
+          cosign sign --yes \
+            "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}"
+
+      - name: Verify build attestations
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_IMAGE: ${{ steps.publish.outputs.ghcr_image }}
+          GHCR_DIGEST: ${{ steps.publish.outputs.ghcr_digest }}
+          DOCKERHUB_IMAGE: ${{ steps.publish.outputs.dockerhub_image }}
+          DOCKERHUB_DIGEST: ${{ steps.publish.outputs.dockerhub_digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh attestation verify \
+            "oci://${GHCR_IMAGE}@${GHCR_DIGEST}" \
+            --repo "$GITHUB_REPOSITORY"
+
+          gh attestation verify \
+            "oci://${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}" \
+            --repo "$GITHUB_REPOSITORY"
+
+      - name: Verify image signatures
+        env:
+          GHCR_IMAGE: ${{ steps.publish.outputs.ghcr_image }}
+          GHCR_DIGEST: ${{ steps.publish.outputs.ghcr_digest }}
+          DOCKERHUB_IMAGE: ${{ steps.publish.outputs.dockerhub_image }}
+          DOCKERHUB_DIGEST: ${{ steps.publish.outputs.dockerhub_digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          identity="https://github.com/${GITHUB_WORKFLOW_REF}"
+          issuer="https://token.actions.githubusercontent.com"
+
+          for image in \
+            "${GHCR_IMAGE}@${GHCR_DIGEST}" \
+            "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}"; do
+            cosign verify \
+              --certificate-identity "$identity" \
+              --certificate-oidc-issuer "$issuer" \
+              "$image"
+          done
