@@ -96,6 +96,13 @@
             image = ./images/document.nix;
           };
         };
+
+        archive = {
+          document = import ./tools/archive.nix {
+            inherit pkgs;
+            application = self.packages.${system}.document;
+          };
+        };
       };
     };
   in {

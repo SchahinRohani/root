@@ -1,0 +1,35 @@
+name: Export store
+description: Export a built package and its runtime closure
+
+inputs:
+  package:
+    description: Package name
+    required: true
+  path:
+    description: Destination file for the store export
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Export store closure
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        EXPORT_PATH: ${{ inputs.path }}
+      run: |
+        set -euo pipefail
+
+        package_path="$(
+          nix eval --raw \
+            --no-update-lock-file \
+            ".#${PACKAGE}.outPath"
+        )"
+
+        closure_paths="$(
+          nix-store --query --requisites "$package_path"
+        )"
+
+        mapfile -t closure <<< "$closure_paths"
+
+        nix-store --export "${closure[@]}" > "$EXPORT_PATH"
