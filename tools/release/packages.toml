@@ -1,0 +1,18 @@
+[packages.astro-bun]
+language = "typescript"
+path = "packages/astro-bun"
+scope = "astro-bun"
+manifest = "package.json"
+tag_prefix = "astro-bun-v"
+
+targets = ["npm"]
+
+[packages.document]
+language = "rust"
+path = "packages/document"
+scope = "document"
+manifest = "Cargo.toml"
+tag_prefix = "document-v"
+
+targets = ["cargo", "binary"]
+containers = ["ghcr", "dockerhub"]
