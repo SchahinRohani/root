@@ -1,5 +1,11 @@
 # Changelog
 
+## document 0.1.2
+
+### 🐛 Fixes
+
+- verify subsequent release by [@SchahinRohani](https://github.com/SchahinRohani) ([6914d28](https://github.com/SchahinRohani/root/commit/6914d28eabd8c02e87f8952362cace8fd6202c61))
+
 ## document 0.1.1
 
 ### 🐛 Fixes
