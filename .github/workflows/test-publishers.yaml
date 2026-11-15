@@ -74,3 +74,127 @@ jobs:
           repeated-digest: ${{ steps.repeated.outputs.digest }}
           mismatch-outcome: ${{ steps.mismatch.outcome }}
           unavailable-outcome: ${{ steps.unavailable.outcome }}
+  prepare:
+    name: Prepare build fixtures
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Prepare fixtures
+        uses: ./.github/actions/build-test # zizmor: ignore[self-repository]
+        with:
+          operation: prepare
+
+      - name: Record amd64 metadata
+        uses: ./.github/actions/build-metadata # zizmor: ignore[self-repository]
+        with:
+          package: publisher-test
+          version: '0.0.1'
+          architecture: amd64
+          sha: ${{ github.sha }}
+
+      - name: Record arm64 metadata
+        uses: ./.github/actions/build-metadata # zizmor: ignore[self-repository]
+        with:
+          package: publisher-test
+          version: '0.0.1'
+          architecture: arm64
+          sha: ${{ github.sha }}
+
+      - name: Upload fixtures
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: build-verification-fixtures
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  attest:
+    name: Attest build fixtures
+    needs: prepare
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Download fixtures
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: build-verification-fixtures
+          path: artifacts
+
+      - name: Attest fixtures
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            artifacts/*.tar.gz
+            artifacts/*.tar
+            artifacts/build-*.json
+          create-storage-record: false
+
+  verify:
+    name: Verify build fixtures
+    needs: attest
+    runs-on: ubuntu-24.04
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Download fixtures
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: build-verification-fixtures
+          path: artifacts
+
+      - name: Verify valid artifacts
+        uses: ./.github/actions/build-verify # zizmor: ignore[self-repository]
+        with:
+          package: publisher-test
+          version: '0.0.1'
+          sha: ${{ github.sha }}
+          signer-workflow: .github/workflows/test-publishers.yaml
+
+      - name: Reject incorrect release SHA
+        id: wrong-sha
+        continue-on-error: true
+        uses: ./.github/actions/build-verify # zizmor: ignore[self-repository]
+        with:
+          package: publisher-test
+          version: '0.0.1'
+          sha: '0000000000000000000000000000000000000000'
+          signer-workflow: .github/workflows/test-publishers.yaml
+
+      - name: Modify an attested artifact
+        uses: ./.github/actions/build-test # zizmor: ignore[self-repository]
+        with:
+          operation: mutate
+
+      - name: Reject modified artifact
+        id: tampered
+        continue-on-error: true
+        uses: ./.github/actions/build-verify # zizmor: ignore[self-repository]
+        with:
+          package: publisher-test
+          version: '0.0.1'
+          sha: ${{ github.sha }}
+          signer-workflow: .github/workflows/test-publishers.yaml
+
+      - name: Assert results
+        uses: ./.github/actions/build-test # zizmor: ignore[self-repository]
+        with:
+          operation: assert
+          wrong-sha-outcome: ${{ steps.wrong-sha.outcome }}
+          tampered-outcome: ${{ steps.tampered.outcome }}

@@ -11,6 +11,10 @@ inputs:
   sha:
     description: Expected release commit
     required: true
+  signer-workflow:
+    description: Expected attestation workflow path
+    required: false
+    default: '.github/workflows/build.yaml'
 
 runs:
   using: composite
@@ -21,6 +25,7 @@ runs:
         PACKAGE: ${{ inputs.package }}
         VERSION: ${{ inputs.version }}
         RELEASE_SHA: ${{ inputs.sha }}
+        SIGNER_WORKFLOW: ${{ inputs.signer-workflow }}
       run: |
         set -euo pipefail
 
@@ -35,7 +40,7 @@ runs:
             gh attestation verify "$file" \
               --repo "$GITHUB_REPOSITORY" \
               --signer-workflow \
-                "${GITHUB_REPOSITORY}/.github/workflows/build.yaml" \
+                "${GITHUB_REPOSITORY}/${SIGNER_WORKFLOW}" \
               --source-digest "$GITHUB_SHA" \
               --signer-digest "$GITHUB_SHA" \
               --deny-self-hosted-runners

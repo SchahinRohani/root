@@ -1,0 +1,54 @@
+name: Test build verification
+description: Prepare fixtures and assert build verification results
+
+inputs:
+  operation:
+    description: Prepare fixtures, mutate an artifact or assert results
+    required: true
+  wrong-sha-outcome:
+    description: Outcome of verification with an incorrect release SHA
+    default: ''
+  tampered-outcome:
+    description: Outcome of verification with a modified artifact
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Run test operation
+      shell: bash
+      env:
+        OPERATION: ${{ inputs.operation }}
+        WRONG_SHA_OUTCOME: ${{ inputs.wrong-sha-outcome }}
+        TAMPERED_OUTCOME: ${{ inputs.tampered-outcome }}
+      run: |
+        set -euo pipefail
+
+        case "$OPERATION" in
+          prepare)
+            mkdir -p dist
+
+            for architecture in amd64 arm64; do
+              printf 'Test binary for %s\n' "$architecture" |
+                gzip -n \
+                  > "dist/publisher-test-0.0.1-linux-${architecture}.tar.gz"
+
+              printf 'Test image for %s\n' "$architecture" \
+                > "dist/image-${architecture}.tar"
+            done
+            ;;
+          mutate)
+            printf '\nModified after attestation\n' \
+              >> artifacts/publisher-test-0.0.1-linux-amd64.tar.gz
+            ;;
+          assert)
+            [[ "$WRONG_SHA_OUTCOME" == "failure" ]]
+            [[ "$TAMPERED_OUTCOME" == "failure" ]]
+
+            echo "All build verification assertions passed."
+            ;;
+          *)
+            echo "Unknown operation: $OPERATION" >&2
+            exit 1
+            ;;
+        esac
