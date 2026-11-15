@@ -1,0 +1,76 @@
+name: Test publishers
+
+on:
+  push:
+    branches:
+      - test/publishers
+
+permissions:
+  contents: read
+
+jobs:
+  container:
+    name: Container publishing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    services:
+      registry:
+        image: registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+        ports:
+          - 5000:5000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Prepare test images
+        uses: ./.github/actions/container-test # zizmor: ignore[self-repository]
+        with:
+          operation: prepare
+
+      - name: Publish new image
+        id: first
+        uses: ./.github/actions/container-publish # zizmor: ignore[self-repository]
+        with:
+          image: localhost:5000/test/document
+          version: '0.0.1'
+
+      - name: Repeat identical publication
+        id: repeated
+        uses: ./.github/actions/container-publish # zizmor: ignore[self-repository]
+        with:
+          image: localhost:5000/test/document
+          version: '0.0.1'
+
+      - name: Change test images
+        uses: ./.github/actions/container-test # zizmor: ignore[self-repository]
+        with:
+          operation: mutate
+
+      - name: Reject different images
+        id: mismatch
+        continue-on-error: true
+        uses: ./.github/actions/container-publish # zizmor: ignore[self-repository]
+        with:
+          image: localhost:5000/test/document
+          version: '0.0.1'
+
+      - name: Reject unavailable registry
+        id: unavailable
+        continue-on-error: true
+        uses: ./.github/actions/container-publish # zizmor: ignore[self-repository]
+        with:
+          image: 127.0.0.1:1/test/document
+          version: '0.0.1'
+
+      - name: Assert results
+        uses: ./.github/actions/container-test # zizmor: ignore[self-repository]
+        with:
+          operation: assert
+          first-digest: ${{ steps.first.outputs.digest }}
+          repeated-digest: ${{ steps.repeated.outputs.digest }}
+          mismatch-outcome: ${{ steps.mismatch.outcome }}
+          unavailable-outcome: ${{ steps.unavailable.outcome }}

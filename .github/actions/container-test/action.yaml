@@ -1,0 +1,143 @@
+name: Test container publishing
+description: Prepare container fixtures and assert publishing results
+
+inputs:
+  operation:
+    description: Prepare fixtures, mutate them or assert results
+    required: true
+  first-digest:
+    description: Digest from the first publication
+    default: ''
+  repeated-digest:
+    description: Digest from the repeated publication
+    default: ''
+  mismatch-outcome:
+    description: Outcome of publishing different images
+    default: ''
+  unavailable-outcome:
+    description: Outcome of publishing to an unavailable registry
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Run test operation
+      shell: bash
+      env:
+        OPERATION: ${{ inputs.operation }}
+        FIRST_DIGEST: ${{ inputs.first-digest }}
+        REPEATED_DIGEST: ${{ inputs.repeated-digest }}
+        MISMATCH_OUTCOME: ${{ inputs.mismatch-outcome }}
+        UNAVAILABLE_OUTCOME: ${{ inputs.unavailable-outcome }}
+      run: |
+        set -euo pipefail
+
+        case "$OPERATION" in
+          prepare|mutate)
+            ;;
+          assert)
+            [[ "$FIRST_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+            [[ "$FIRST_DIGEST" == "$REPEATED_DIGEST" ]]
+            [[ "$MISMATCH_OUTCOME" == "failure" ]]
+            [[ "$UNAVAILABLE_OUTCOME" == "failure" ]]
+
+            temporary="$(mktemp -d)"
+            trap 'rm -rf "$temporary"' EXIT
+
+            skopeo inspect --raw \
+              docker://localhost:5000/test/document:0.0.1 \
+              > "$temporary/manifest.json"
+
+            actual="$(skopeo manifest-digest "$temporary/manifest.json")"
+            [[ "$actual" == "$FIRST_DIGEST" ]]
+
+            echo "All container publishing assertions passed."
+            exit 0
+            ;;
+          *)
+            echo "Unknown operation: $OPERATION" >&2
+            exit 1
+            ;;
+        esac
+
+        if [[ "$OPERATION" == "prepare" ]]; then
+          mkdir -p "$HOME/.config/containers/registries.conf.d"
+
+          cat > "$HOME/.config/containers/registries.conf.d/test.conf" <<'EOF'
+        [[registry]]
+        location = "localhost:5000"
+        insecure = true
+        EOF
+
+          ready=false
+
+          for attempt in {1..30}; do
+            if curl --fail --silent \
+              http://localhost:5000/v2/ > /dev/null; then
+              ready=true
+              break
+            fi
+
+            sleep 1
+          done
+
+          if [[ "$ready" != "true" ]]; then
+            echo "Test registry did not become ready" >&2
+            exit 1
+          fi
+        fi
+
+        temporary="$(mktemp -d)"
+        trap 'rm -rf "$temporary"' EXIT
+
+        mkdir -p artifacts
+
+        for architecture in amd64 arm64; do
+          directory="$temporary/$architecture"
+          mkdir -p "$directory"
+
+          jq -n \
+            --arg architecture "$architecture" \
+            --arg variant "$OPERATION" \
+            '{
+              architecture: $architecture,
+              os: "linux",
+              config: {
+                Labels: {
+                  "org.opencontainers.image.version": "0.0.1",
+                  "test.variant": $variant
+                }
+              },
+              rootfs: {
+                type: "layers",
+                diff_ids: []
+              }
+            }' > "$directory/config.json"
+
+          hash="$(sha256sum "$directory/config.json")"
+          hash="${hash%% *}"
+          size="$(wc -c < "$directory/config.json")"
+
+          mv "$directory/config.json" "$directory/$hash"
+
+          jq -n \
+            --arg digest "sha256:$hash" \
+            --argjson size "$size" \
+            '{
+              schemaVersion: 2,
+              mediaType: "application/vnd.oci.image.manifest.v1+json",
+              config: {
+                mediaType: "application/vnd.oci.image.config.v1+json",
+                digest: $digest,
+                size: $size
+              },
+              layers: []
+            }' > "$directory/manifest.json"
+
+          destination="artifacts/image-${architecture}.tar"
+          rm -f "$destination"
+
+          skopeo copy --preserve-digests \
+            "dir:$directory" \
+            "oci-archive:${PWD}/${destination}"
+        done
