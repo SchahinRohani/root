@@ -16,59 +16,98 @@ runs:
   using: composite
   steps:
     - name: Verify build artifacts
-      shell: bash
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
       env:
         PACKAGE: ${{ inputs.package }}
         VERSION: ${{ inputs.version }}
         RELEASE_SHA: ${{ inputs.sha }}
-      run: |
-        set -euo pipefail
+      with:
+        script: |
+          const { createHash } = require('node:crypto');
+          const { createReadStream } = require('node:fs');
+          const { readFile, stat } = require('node:fs/promises');
+          const { join } = require('node:path');
+          const { isDeepStrictEqual } = require('node:util');
 
-        for architecture in amd64 arm64; do
-          metadata="artifacts/build-${architecture}.json"
-          archive="${PACKAGE}-${VERSION}-linux-${architecture}.tar.gz"
-          image="image-${architecture}.tar"
+          const {
+            PACKAGE: packageName,
+            VERSION: version,
+            RELEASE_SHA: releaseSha,
+            GITHUB_REPOSITORY: repository,
+            GITHUB_SHA: workflowSha,
+          } = process.env;
 
-          for file in "$metadata" "artifacts/$archive" "artifacts/$image"; do
-            test -f "$file"
+          for (const architecture of ['amd64', 'arm64']) {
+            const metadataPath = join(
+              'artifacts',
+              `build-${architecture}.json`,
+            );
 
-            gh attestation verify "$file" \
-              --repo "$GITHUB_REPOSITORY" \
-              --signer-workflow \
-                "${GITHUB_REPOSITORY}/.github/workflows/build.yaml" \
-              --source-digest "$GITHUB_SHA" \
-              --signer-digest "$GITHUB_SHA" \
-              --deny-self-hosted-runners
-          done
+            const filenames = [
+              `${packageName}-${version}-linux-${architecture}.tar.gz`,
+              `image-${architecture}.tar`,
+            ];
 
-          archive_hash="$(sha256sum "artifacts/$archive")"
-          archive_hash="${archive_hash%% *}"
+            const paths = [
+              metadataPath,
+              ...filenames.map((filename) => join('artifacts', filename)),
+            ];
 
-          image_hash="$(sha256sum "artifacts/$image")"
-          image_hash="${image_hash%% *}"
+            for (const path of paths) {
+              if (!(await stat(path)).isFile()) {
+                throw new Error(`Expected a regular file: ${path}`);
+              }
 
-          jq -e -s \
-            --arg package "$PACKAGE" \
-            --arg version "$VERSION" \
-            --arg architecture "$architecture" \
-            --arg sha "$RELEASE_SHA" \
-            --arg archive "$archive" \
-            --arg archive_hash "$archive_hash" \
-            --arg image "$image" \
-            --arg image_hash "$image_hash" \
-            '
-              . == [{
-                schema: 1,
-                package: $package,
-                version: $version,
-                architecture: $architecture,
-                sha: $sha,
-                artifacts: {
-                  ($archive): $archive_hash,
-                  ($image): $image_hash
-                }
-              }]
-            ' "$metadata" > /dev/null
+              await exec.exec('gh', [
+                'attestation',
+                'verify',
+                path,
+                '--repo',
+                repository,
+                '--signer-workflow',
+                `${repository}/.github/workflows/build.yaml`,
+                '--source-digest',
+                workflowSha,
+                '--signer-digest',
+                workflowSha,
+                '--deny-self-hosted-runners',
+              ]);
+            }
 
-          echo "Verified ${PACKAGE}@${VERSION} (${architecture}, ${RELEASE_SHA})"
-        done
+            const artifacts = {};
+
+            for (const filename of filenames) {
+              const hash = createHash('sha256');
+
+              for await (const chunk of createReadStream(
+                join('artifacts', filename),
+              )) {
+                hash.update(chunk);
+              }
+
+              artifacts[filename] = hash.digest('hex');
+            }
+
+            const expected = {
+              schema: 1,
+              package: packageName,
+              version,
+              architecture,
+              sha: releaseSha,
+              artifacts,
+            };
+
+            const metadata = JSON.parse(
+              await readFile(metadataPath, 'utf8'),
+            );
+
+            if (!isDeepStrictEqual(metadata, expected)) {
+              throw new Error(
+                `Build metadata does not match expected release artifacts: ${metadataPath}`,
+              );
+            }
+
+            core.info(
+              `Verified ${packageName}@${version} (${architecture}, ${releaseSha})`,
+            );
+          }

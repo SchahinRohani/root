@@ -19,51 +19,73 @@ runs:
   using: composite
   steps:
     - name: Record build metadata
-      shell: bash
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
       env:
         PACKAGE: ${{ inputs.package }}
         VERSION: ${{ inputs.version }}
         ARCHITECTURE: ${{ inputs.architecture }}
         RELEASE_SHA: ${{ inputs.sha }}
-      run: |
-        set -euo pipefail
+      with:
+        script: |
+          const { createHash } = require('node:crypto');
+          const { createReadStream } = require('node:fs');
+          const { stat, writeFile } = require('node:fs/promises');
+          const { join } = require('node:path');
 
-        actual="$(git rev-parse HEAD)"
+          const {
+            PACKAGE: packageName,
+            VERSION: version,
+            ARCHITECTURE: architecture,
+            RELEASE_SHA: expectedSha,
+          } = process.env;
 
-        if [[ "$actual" != "$RELEASE_SHA" ]]; then
-          echo "Checkout does not match release commit: $RELEASE_SHA" >&2
-          exit 1
-        fi
+          const { stdout } = await exec.getExecOutput(
+            'git',
+            ['rev-parse', 'HEAD'],
+            { silent: true },
+          );
 
-        archive="${PACKAGE}-${VERSION}-linux-${ARCHITECTURE}.tar.gz"
-        image="image-${ARCHITECTURE}.tar"
+          const sha = stdout.trim();
 
-        test -f "dist/$archive"
-        test -f "dist/$image"
+          if (sha !== expectedSha) {
+            throw new Error(
+              `Checkout does not match release commit: ${expectedSha}`,
+            );
+          }
 
-        archive_hash="$(sha256sum "dist/$archive")"
-        archive_hash="${archive_hash%% *}"
+          const filenames = [
+            `${packageName}-${version}-linux-${architecture}.tar.gz`,
+            `image-${architecture}.tar`,
+          ];
 
-        image_hash="$(sha256sum "dist/$image")"
-        image_hash="${image_hash%% *}"
+          const artifacts = {};
 
-        jq -n \
-          --arg package "$PACKAGE" \
-          --arg version "$VERSION" \
-          --arg architecture "$ARCHITECTURE" \
-          --arg sha "$actual" \
-          --arg archive "$archive" \
-          --arg archive_hash "$archive_hash" \
-          --arg image "$image" \
-          --arg image_hash "$image_hash" \
-          '{
-            schema: 1,
-            package: $package,
-            version: $version,
-            architecture: $architecture,
-            sha: $sha,
-            artifacts: {
-              ($archive): $archive_hash,
-              ($image): $image_hash
+          for (const filename of filenames) {
+            const path = join('dist', filename);
+
+            if (!(await stat(path)).isFile()) {
+              throw new Error(`Expected a regular file: ${path}`);
             }
-          }' > "dist/build-${ARCHITECTURE}.json"
+
+            const hash = createHash('sha256');
+
+            for await (const chunk of createReadStream(path)) {
+              hash.update(chunk);
+            }
+
+            artifacts[filename] = hash.digest('hex');
+          }
+
+          const metadata = {
+            schema: 1,
+            package: packageName,
+            version,
+            architecture,
+            sha,
+            artifacts,
+          };
+
+          await writeFile(
+            join('dist', `build-${architecture}.json`),
+            `${JSON.stringify(metadata, null, 2)}\n`,
+          );
